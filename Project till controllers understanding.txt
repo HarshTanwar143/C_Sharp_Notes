@@ -1,0 +1,1705 @@
+###################################################################################################################################
+QUESTIONS ON BUS AND DRIVER MODELS
+# 1. Why SQL table shows fewer columns but model has more fields?
+
+## Question
+
+Why does SQL Server table show only 5 columns, but model has extra properties like `Office` and `Trips`?
+
+## What it is
+
+SQL table contains only actual database columns:
+
+* `bus_id`
+* `office_id`
+* `registration_number`
+* `capacity`
+* `type`
+
+But EF Core also generated:
+
+```csharp id="b8j1y2"
+public virtual AgencyOffice Office { get; set; } = null!;
+public virtual ICollection<Trip> Trips { get; set; } = new List<Trip>();
+```
+
+These are called **Navigation Properties**.
+
+---
+
+## Why we use it / Purpose
+
+They help EF Core understand relationships between tables and allow easy navigation between related data.
+
+Example:
+
+```csharp id="f1v4n8"
+bus.Office
+```
+
+gets related office data.
+
+```csharp id="w2m8q1"
+bus.Trips
+```
+
+gets all trips of that bus.
+
+These properties are not physical DB columns.
+
+---
+
+# 2. How to identify relationships just by looking at model?
+
+## Question
+
+How can we identify One-to-One, One-to-Many, Many-to-Many from model?
+
+---
+
+# Rule
+
+## A. Single Object → One
+
+```csharp id="z7t9d2"
+public virtual AgencyOffice Office { get; set; }
+```
+
+means one related office.
+
+---
+
+## B. ICollection<T> → Many
+
+```csharp id="n4x6r3"
+public virtual ICollection<Trip> Trips { get; set; }
+```
+
+means many trips.
+
+---
+
+# In your model
+
+```csharp id="m8v2p5"
+public virtual AgencyOffice Office
+```
+
+→ One Office
+
+```csharp id="u3c7e1"
+public virtual ICollection<Trip> Trips
+```
+
+→ Many Trips
+
+So relationship is:
+
+# One Bus → Many Trips
+
+and
+
+# Many Buses → One Office
+
+---
+
+# Quick evaluator line
+
+* Single object property = One
+* ICollection property = Many
+
+---
+
+IMPORTANT : IF A MODEL(LIKE BUS) HAS THIS     public virtual AgencyOffice Office { get; set; } = null!; IT MEANS ONE BUS IS RELATED WITH AGENCY OFFICE
+AND IF A MODEL(LIKE BUS) HAS THIS     public virtual ICollection<Trip> Trips { get; set; } = new List<Trip>(); IT MEANS
+ONE BUS IS RELATED WITH MULTIPLE TRIPS 
+
+# 3. Why `public virtual`?
+
+## Question
+
+Why EF Core generated `virtual` keyword?
+
+## What it does
+
+`virtual` allows EF Core to create proxy classes for:
+
+* Lazy Loading
+* Runtime overriding
+* Better testing/mocking
+
+---
+
+## Why we use it
+
+Mainly for Lazy Loading.
+
+Example:
+
+```csharp id="h9s2k4"
+bus.Trips
+```
+
+Trips load automatically when accessed.
+
+Without `virtual`, lazy loading cannot happen.
+
+---
+
+IMPORTANT : If you don't use `virtual`, then **lazy loading** will not work. ✅
+
+But you can still fetch Trips data using:
+
+```csharp id="q9w2m7"
+.Include(b => b.Trips)
+```
+
+So:
+
+* With `virtual`
+  → EF can automatically fetch related data (lazy loading)
+
+* Without `virtual`
+  → You must fetch manually using `Include()` or explicit loading.
+
+Yes, if Lazy Loading is properly enabled and `virtual` is used, then usually you do not need `Include()`.
+
+Example:
+
+```csharp id="j2x8v4"
+var bus = context.Buses.First();
+
+var trips = bus.Trips;
+```
+
+When `bus.Trips` is accessed, EF automatically loads trips from DB.
+
+But this works only if:
+
+* `virtual` is used
+* Lazy loading proxies are enabled
+
+Otherwise you must use:
+
+```csharp id="k7m1q5"
+.Include(b => b.Trips)
+```
+
+exact reply : “We use `virtual` mainly to support Lazy Loading in Entity Framework Core.
+It allows EF Core to create a proxy child class at runtime, so when we access related data like `bus.Trips`, EF can automatically fetch that data from the database if it is not already loaded.”
+
+Purpose of the child/proxy class:
+It monitors access to virtual navigation properties.
+Example:
+bus.Trips
+
+When you access this property, the proxy class detects it and automatically loads Trips data from database.
+
+So the proxy class is created to add automatic behavior like Lazy Loading without changing your original class.
+
+
+# 4. Why `ICollection<Trip>` used?
+
+## Question
+
+Why use `ICollection<Trip>` instead of single `Trip`?
+
+## What it means
+
+A Bus can have multiple Trips.
+
+So collection is needed.
+
+```csharp id="p4x8m6"
+ICollection<Trip>
+```
+
+stores many trip objects.
+
+---
+
+## Why ICollection specifically?
+
+Because EF Core works efficiently with collections for:
+
+* Add
+* Remove
+* Track changes
+
+It is flexible and generic.
+
+---
+
+# Quick evaluator line
+
+`ICollection<T>` represents multiple related records.
+
+---
+ICollection<T> is a generic collection interface in C# used to store multiple objects of the same type.
+It stores multiple related entities/objects.
+
+Example:
+
+public virtual ICollection<Trip> Trips { get; set; }
+
+stores many Trip records related to one Bus.
+
+Why use Interface (ICollection) instead of concrete collection (List)?
+
+Because interface provides flexibility.
+
+Example:
+
+ICollection<Trip>
+
+can internally work with:
+
+List<Trip>
+HashSet<Trip>
+other collection types
+
+without changing code.
+
+EF uses the interface for flexibility and better abstraction.
+
+
+# 5. What is `= null!;` ?
+
+Example:
+
+```csharp id="r8k2d5"
+public string Type { get; set; } = null!;
+```
+
+---
+
+## Question
+
+What does `null!` mean?
+
+## What it does
+
+It tells compiler:
+OR
+null! means:
+
+“Right now value is null, but don’t give warning because value will come later.”
+
+---
+Why warning comes?
+
+Because property is non-nullable:
+
+AgencyOffice Office
+
+Compiler thinks:
+
+“This property must always have value.”
+
+But currently no value is assigned.
+
+So compiler gives warning.
+----------------------------------
+Then why we use null!?
+
+Because EF Core automatically fills this property later from database.
+
+So we tell compiler:
+
+“Relax, EF Core will assign value later.”
+-----------------------------------
+Real Simple Example
+
+Suppose:
+
+Bus bus = new Bus();
+
+At this moment:
+
+bus.Office
+
+has no value yet.
+
+But later EF loads Office data from database automatically.
+
+So null! avoids unnecessary warning.
+
+--------------------------------
+IMPORTANT NOTE:
+No. In modern C# (nullable reference types enabled), nothing is assumed nullable automatically.
+
+* Reference types (`string`, classes) → non-nullable by default
+* Value types (`int`, `bool`) → also non-nullable by default
+
+To make anything nullable, use `?`
+
+Example:
+
+```csharp id="n7m2x5"
+string?
+int?
+Bus?
+```
+
+
+# 6. Why `partial class Bus`?
+
+## Question
+# What is `partial` in simple words?
+
+`partial` means:
+
+> “One class can be divided into multiple files.”
+
+---
+
+# Why we use it in EF Core?
+
+Because scaffolded files can regenerate.
+
+If you directly edit generated `Bus.cs`, your changes may get deleted when scaffolding runs again.
+
+So EF uses `partial` to let you create another file safely.
+
+---
+
+# Simple Example
+
+### Generated file (`Bus.cs`)
+
+```csharp id="f2m8x4"
+public partial class Bus
+{
+    public int BusId { get; set; }
+}
+```
+
+### Your custom file (`BusCustom.cs`)
+
+```csharp id="n5q1v7"
+public partial class Bus
+{
+    public void Print()
+    {
+    }
+}
+```
+
+---
+
+# What happens?
+
+C# combines both files into one single `Bus` class automatically.
+
+---
+
+# Real Purpose
+
+It protects your custom code from getting deleted after scaffolding again.
+
+---
+
+# Very short evaluator answer
+
+“We use `partial` so we can extend scaffolded classes in separate files safely without losing custom code during regeneration.”
+
+---
+important : If SQL column allows NULL
+→ use nullable type (?)
+
+# Most Important Interview/Evaluator Summary
+
+| Syntax                | Meaning                             |
+| --------------------- | ----------------------------------- |
+| `AgencyOffice Office` | One related entity                  |
+| `ICollection<Trip>`   | Multiple related entities           |
+| `virtual`             | Supports lazy loading               |
+| `null!`               | Suppresses nullable warning         |
+| `partial class`       | Split class into multiple files     |
+| Navigation Property   | Helps move between related entities |
+
+
+############################################################################################################################
+IMPORTANT QUESTIONS ON APPDBCONTEXT CLASS
+
+1. What is this constructor and DbContextOptions?
+public BusBookingContext(DbContextOptions<BusBookingContext> options)
+    : base(options)
+{
+}
+What is DbContextOptions?
+
+It contains configuration information for DbContext.
+
+Example:
+
+Connection String
+SQL Server provider
+Lazy loading settings
+Logging settings
+Why passed to base(options)?
+
+Because parent class DbContext needs these settings to work with database.
+
+So:
+
+base(options)
+
+passes configuration to actual EF Core DbContext.
+
+What does DbContext actually do?
+
+DbContext is the main EF Core class that:
+
+Connects to database
+Tracks entity changes
+Executes queries
+Saves data
+
+Very short evaluator answer
+
+“DbContextOptions contains database configuration settings and is passed to the base DbContext class so EF Core can connect and work with the database.”
+
+NOTE:
+
+
+DbContextOptions gets configuration data from Program.cs
+
+
+Example:
+builder.Services.AddDbContext<BusBookingContext>(options =>    options.UseSqlServer(connectionString));
+Here EF creates and fills options.
+
+
+
+DbContextOptions is not inside your DbContext class.
+It is a separate EF Core class used to store DbContext configuration settings.
+
+
+2. Why public virtual DbSet<Bus> Buses { get; set; }?
+public virtual DbSet<Bus> Buses { get; set; }
+What is DbSet<Bus>?
+
+Represents the buses table in database.
+
+Used for:
+
+Insert
+Update
+Delete
+Fetch data
+
+Example:
+
+context.Buses.ToList();
+Why public?
+
+So it can be accessed outside DbContext.
+
+Why virtual?
+
+Mainly for mocking/testing and proxy behavior.
+
+Lazy loading is usually for navigation properties, not DbSet.
+
+Very short evaluator answer
+
+“DbSet<T> represents a database table and is used to perform CRUD operations on that entity.”
+
+For DbSet properties, virtual is mainly used for:
+
+Runtime overriding
+Better testing/mocking
+
+Not mainly for lazy loading.
+
+Yes, you normally do not do this manually in regular projects. ✅
+
+EF Core scaffolding adds virtual by default for flexibility/testing support.
+
+Actual overriding usually happens only in advanced unit testing or proxy frameworks.
+
+3. Why protected override void OnModelCreating(ModelBuilder modelBuilder)?
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+What does it do?
+
+Used to configure entities and relationships using Fluent API.
+
+Example:
+
+Primary keys
+Foreign keys
+Relationships
+Table names
+Constraints
+What is ModelBuilder?
+
+It is an EF Core class used to build/configure entity models.
+
+Why override?
+
+Because DbContext already has a method named:
+
+OnModelCreating()
+
+We override it to add our custom configuration.
+
+Why protected?
+
+Because only DbContext itself or derived classes should use it internally.
+
+No need for outside access.
+
+Very short evaluator answer
+
+“OnModelCreating is used to configure entities and relationships using Fluent API. We override it because the base DbContext already provides this method.”
+
+####################################################################################################################
+IMPORTANT QUESTIONS ON DTOS AND MAPPING
+1. hey in my dto i didn;t give the value of these 
+    public virtual AgencyOffice? Office { get; set; }
+
+    public virtual ICollection<Trip> TripDriver1Drivers { get; set; } = new List<Trip>();
+
+    public virtual ICollection<Trip> TripDriver2Drivers { get; set; } = new List<Trip>();, 
+	then what it means they will get values from where? and how put value in them?
+
+ANS : 
+These are navigation properties. ✅
+Normally user/client does not send them in DTO.
+
+EF Core fills them from database relationships.
+
+Example:
+
+```csharp id="m4x8q1"
+driver.Office
+```
+
+EF loads related `AgencyOffice` using `OfficeId`.
+
+And:
+
+```csharp id="p7n2v5"
+driver.TripDriver1Drivers
+```
+
+loads related trips using relationships.
+
+---
+
+How values come?
+
+From:
+
+* `.Include()`
+* Lazy Loading
+* Explicit Loading
+
+Example:
+
+```csharp id="u1m9x4"
+context.Drivers.Include(d => d.Office)
+```
+
+EF automatically fills `Office` property.
+
+2. Meaning of this in mappings folder while mapping :
+
+.ForMember(dest => dest.AddressId, opt => opt.Ignore())
+.ForMember(dest => dest.Address, opt => opt.Ignore())
+
+ans: 
+
+Here we are ignoring destination model properties (Driver model properties).
+
+dest.AddressId
+dest.Address
+
+means:
+
+“Do not fill/map these properties while converting DTO → Driver model.”
+
+###########################################################################################################################
+IMPORTANT QUESTIONS ON REPOSITORY AND ITS INTERFACES
+
+1. Why use Interface instead of Abstract class?
+What is Interface?
+
+Interface contains only method declarations (contract).
+
+Example:
+
+Task<IEnumerable<Bus>> GetAllAsync();
+
+It says:
+
+“Any repository implementing this interface must provide this method.”
+
+Why use Interface in Repository Pattern?
+
+Because it provides:
+
+Loose coupling
+Easy dependency injection
+Better testing/mocking
+Flexibility to change implementation
+Why not Abstract class?
+
+Abstract class is used when you want:
+
+Shared code/implementation
+Common logic
+
+But repositories usually only need contract definition.
+
+So interface is preferred.
+
+Very short evaluator answer
+
+“We use interfaces in repositories to define contracts, support dependency injection, loose coupling, and easier testing.”
+
+
+2. What is IEnumerable<T>?
+
+Example:
+
+IEnumerable<Bus>
+What is it?
+
+It is an interface used to represent a collection of multiple items that can be iterated.
+
+Simple meaning:
+
+“Collection of many objects.”
+
+Why used?
+
+Because methods like:
+
+GetAllAsync()
+
+return multiple buses, not single bus.
+
+When to use it?
+
+Use when method returns multiple records/items.
+
+Example:
+
+List of buses
+List of drivers
+List of trips
+Very short evaluator answer
+
+“IEnumerable<T> represents a collection of multiple objects that can be iterated using loops.”
+
+
+IMPORTANT:
+Q: hey then what is the difference b/w this and Icollection both are same i guess? and why don't you use icollection here? 
+A: They are similar, but purpose is different. ✅
+
+# `IEnumerable<T>`
+
+Used mainly for:
+
+* Reading/iterating data
+* Looping through collection
+
+Example:
+
+```csharp id="x4m8q1"
+IEnumerable<Bus>
+```
+
+means:
+
+> “Collection of buses for reading.”
+
+It supports:
+
+```csharp id="v7n2p5"
+foreach
+```
+
+---
+
+# `ICollection<T>`
+
+Used for:
+
+* Reading
+* Adding
+* Removing
+* Updating collection
+
+Example:
+
+```csharp id="u1m9x4"
+ICollection<Trip>
+```
+
+supports:
+
+```csharp id="k5q8n2"
+Add()
+Remove()
+Count
+```
+
+---
+
+# Why repository uses `IEnumerable` not `ICollection`?
+
+Because repository methods usually only return/read data.
+
+No need for add/remove collection operations there.
+
+So lightweight `IEnumerable` is preferred.
+
+---
+
+# Very short evaluator answer
+
+“`IEnumerable<T>` is mainly for reading/iterating collections, while `ICollection<T>` also supports add/remove operations. Repository methods usually only need reading, so `IEnumerable` is used.”
+
+their operations :
+# `IEnumerable<T>` Example
+
+```csharp id="m4x8q1"
+IEnumerable<int> nums = new List<int>() { 1, 2, 3 };
+
+foreach(var n in nums)
+{
+    Console.WriteLine(n);
+}
+```
+
+## Mainly used for:
+
+* Reading
+* Looping/iterating
+
+Cannot directly do:
+
+```csharp id="p7n2v5"
+nums.Add()
+nums.Remove()
+```
+
+because `IEnumerable` does not provide these methods.
+
+---
+
+# `ICollection<T>` Example
+
+```csharp id="u1m9x4"
+ICollection<int> nums = new List<int>();
+```
+
+## Add
+
+```csharp id="r5m2x8"
+nums.Add(10);
+```
+
+## Remove
+
+```csharp id="n7q1v4"
+nums.Remove(10);
+```
+
+## Count
+
+```csharp id="p4m8x2"
+nums.Count
+```
+
+## Loop
+
+```csharp id="w5q2n8"
+foreach(var n in nums)
+{
+    Console.WriteLine(n);
+}
+```
+
+---
+
+# Main Difference
+
+| Feature   | IEnumerable | ICollection |
+| --------- | ----------- | ----------- |
+| Read/Loop | ✅           | ✅           |
+| Add       | ❌           | ✅           |
+| Remove    | ❌           | ✅           |
+| Count     | ❌           | ✅           |
+
+
+3. What is Task?
+
+Example:
+
+Task<Bus>
+What is it?
+
+Task represents an asynchronous operation.
+
+Simple meaning:
+
+“This operation may take time, so run it asynchronously without blocking application.”
+
+Why used?
+
+Database operations take time.
+
+Example:
+
+Fetching data
+Saving data
+Updating data
+
+So async improves performance and responsiveness.
+
+When to use it?
+
+Use Task when method performs asynchronous work like:
+
+Database calls
+API calls
+File operations
+Very short evaluator answer
+
+“Task represents asynchronous operations and is used to avoid blocking the application during long-running tasks like database calls.”
+
+4. What does ? mean in Bus?
+
+Example:
+
+Task<Bus?>
+What does it mean?
+
+It means returned object can be null.
+
+Example:
+
+GetByIdAsync(id)
+
+If bus not found, method may return null.
+
+So:
+
+Bus?
+
+means nullable Bus object.
+
+When to use it?
+
+Use ? when value/object may not exist.
+
+Very short evaluator answer
+
+“? means the object/value is nullable and can contain null.”
+
+
+IMPORTANT : Loose coupling means:
+
+> Classes depend on abstractions (interfaces) instead of concrete classes.
+
+So one implementation can be replaced easily without changing other code.
+VERY IMPORTANT EXAMPLE TO SHOW THE LOOSE COUPLING AND WHY USED INTERFACE: 
+# 1. Interface File
+
+## `INotification.cs`
+
+```csharp id="m4x8q1"
+public interface INotification
+{
+    void Send();
+}
+```
+
+---
+
+# 2. Implementation Files
+
+## `EmailNotification.cs`
+
+```csharp id="p7n2v5"
+public class EmailNotification : INotification
+{
+    public void Send()
+    {
+        Console.WriteLine("Email Sent");
+    }
+}
+```
+
+---
+
+## `SmsNotification.cs`
+
+```csharp id="u1m9x4"
+public class SmsNotification : INotification
+{
+    public void Send()
+    {
+        Console.WriteLine("SMS Sent");
+    }
+}
+```
+
+---
+
+# 3. Service File
+
+## `NotificationService.cs`
+
+```csharp id="r5m2x8"
+public class NotificationService
+{
+    private readonly INotification _notification;
+
+    public NotificationService(INotification notification)
+    {
+        _notification = notification;
+    }
+
+    public void Notify()
+    {
+        _notification.Send();
+    }
+}
+```
+
+---
+
+# 4. Where implementation changes?
+
+Usually in:
+
+## `Program.cs`
+
+### Email
+
+```csharp id="n7q1v4"
+builder.Services.AddScoped<INotification, EmailNotification>();
+```
+
+### SMS
+
+```csharp id="p4m8x2"
+builder.Services.AddScoped<INotification, SmsNotification>();
+```
+
+Only this line changes.
+Rest of application code remains same. ✅
+
+
+
+MOST IMPORTANT :
+From **C# 8.0**, interfaces can contain concrete/default method implementations. ✅
+
+Example:
+
+```csharp id="m4x8q1"
+public interface INotification
+{
+    void Send();
+
+    void Print()
+    {
+        Console.WriteLine("Default Print");
+    }
+}
+```
+
+---
+
+# Why this feature was added?
+
+To allow adding new methods to interfaces without breaking old classes.
+
+Before C# 8:
+
+If you added new method in interface, all implementing classes had to implement it.
+
+Now interface itself can provide default implementation.
+
+
+IMPORTANT: 
+Because `virtual` alone does NOT enable lazy loading. ✅
+
+For lazy loading, you must also:
+
+* Install lazy loading proxy package
+* Enable it:
+
+```csharp id="m4x8q1"
+options.UseLazyLoadingProxies()
+```
+
+If not enabled, EF will NOT automatically load `Office`.
+
+So repository uses:
+
+```csharp id="p7n2v5"
+.Include(b => b.Office)
+```
+
+to explicitly load related Office data.
+
+5. 
+question :     public async Task<Bus?> UpdateAsync(int id, Bus bus)
+    {
+        var existing = await _context.Buses.FindAsync(id);
+        if (existing == null)
+            return null;
+
+        existing.OfficeId = bus.OfficeId;
+        existing.RegistrationNumber = bus.RegistrationNumber;
+        existing.Capacity = bus.Capacity;
+        existing.Type = bus.Type;
+
+        await _context.SaveChangesAsync();
+        return existing;
+    }, in this code i updated in existing which is an pbject created by me and then i do save changes so these existing changes go to real table ?? but how ? becoz this existing is created by me and never saved in db?
+
+answer : 
+Because:
+
+```csharp id="m4x8q1"
+var existing = await _context.Buses.FindAsync(id);
+```
+
+does NOT create a normal independent object.
+
+EF fetches that Bus from database and starts tracking it internally.
+
+So `existing` is a tracked entity connected with DB row.
+
+When you change:
+
+```csharp id="p7n2v5"
+existing.Capacity = bus.Capacity;
+```
+
+EF detects changes.
+
+Then:
+
+```csharp id="u1m9x4"
+await _context.SaveChangesAsync();
+```
+
+EF automatically converts those tracked changes into SQL `UPDATE` query and updates real database row.
+
+
+################################################################################################################
+
+IMPORANT SERVICES AND INTERFACE
+hey why is it used this result! this ! sign :     public async Task<BusResponseDto> CreateBusAsync(BusRequestDto dto)
+    {
+        var bus = _mapper.Map<Bus>(dto);
+        var created = await _repo.CreateAsync(bus);
+        var result = await _repo.GetByIdAsync(created.BusId);
+        return _mapper.Map<BusResponseDto>(result!);
+    }
+
+
+answer:
+`!` is called **null-forgiving operator**. ✅
+
+Example:
+
+```csharp id="m4x8q1"
+result!
+```
+
+means:
+
+> “I am sure `result` is not null.”
+
+---
+
+Why used here?
+
+Because:
+
+```csharp id="p7n2v5"
+GetByIdAsync()
+```
+
+returns:
+
+```csharp id="u1m9x4"
+Bus?
+```
+
+(nullable Bus)
+
+Compiler thinks result may be null.
+
+But developer knows bus was just created, so it will exist.
+
+So `!` removes nullable warning.
+
+
+
+important:
+# Static Typing
+
+Datatype is fixed at compile time.
+
+Example in C#:
+
+```csharp id="m4x8q1"
+int x = 10;
+```
+
+`x` must always store integer.
+
+Cannot do:
+
+```csharp id="p7n2v5"
+x = "hello";
+```
+
+---
+
+# Dynamic Typing
+
+Datatype can change at runtime.
+
+Example:
+
+```csharp id="u1m9x4"
+dynamic x = 10;
+x = "hello";
+```
+
+Same variable can store different types.
+
+---
+
+# Important
+
+C# is mainly a **statically typed language**. ✅
+
+Even `var` is static typing because compiler determines type at compile time.
+
+What is var?
+
+var tells compiler:
+
+“Automatically detect the datatype.”
+No let is there in c#
+
+`var` is called:
+
+# Implicitly Typed Local Variable ✅
+
+because compiler automatically infers/detects the datatype.
+
+
+######################################################################################################################
+
+IMPORTANT QUESTIONS AND DOUBTS FOR CONTROLLERS
+# 1. `[ApiController]`, `[Route]`, `ControllerBase`
+
+```csharp id="m4x8q1"
+[ApiController]
+[Route("api/[controller]")]
+public class BusController : ControllerBase
+```
+
+---
+
+## What is `[ApiController]`?
+
+It is an attribute.
+
+Purpose:
+
+* Enables automatic model validation
+* Better API behavior
+* Automatic bad request responses
+* Binding source inference
+
+---
+
+## Why use it?
+
+To make controller behave like Web API controller.
+
+---
+
+## What is `[Route]`?
+
+Defines URL route for controller.
+
+```csharp id="p7n2v5"
+api/[controller]
+```
+
+`[controller]` automatically becomes:
+
+```txt id="u1m9x4"
+Bus
+```
+
+Final route:
+
+```txt id="r5m2x8"
+api/Bus
+```
+
+---
+
+## What is `ControllerBase`?
+
+Base class for API controllers.
+
+Provides helper methods:
+
+* `Ok()`
+* `BadRequest()`
+* `NotFound()`
+* `CreatedAtAction()`
+
+---
+
+# Very short evaluator answer
+
+“`[ApiController]` enables API-specific behaviors, `[Route]` defines endpoint URL routing, and `ControllerBase` provides built-in API response methods.”
+
+---
+
+# 2. `[HttpGet]`, `IActionResult`
+
+```csharp id="n7q1v4"
+[HttpGet]
+```
+
+---
+
+## What is `[HttpGet]`?
+
+HTTP method attribute.
+
+Defines which HTTP request method endpoint handles.
+
+---
+
+## Other HTTP attributes
+
+* `[HttpGet]`
+* `[HttpPost]`
+* `[HttpPut]`
+* `[HttpDelete]`
+* `[HttpPatch]`
+
+---
+
+## What is `IActionResult`?
+
+An interface representing HTTP response result.
+
+Allows returning different responses:
+
+* `Ok()`
+* `NotFound()`
+* `BadRequest()`
+* `Created()`
+
+---
+
+## Why interface?
+
+Because controller may return different result types dynamically.
+
+Interface provides flexibility.
+
+---
+
+# Very short evaluator answer
+
+“`[HttpGet]` specifies GET endpoint, and `IActionResult` provides flexible HTTP response handling.”
+
+---
+
+# 3. `[FromQuery]`
+
+```csharp id="p4m8x2"
+[FromQuery] int min
+```
+
+---
+
+## What is it?
+
+Binding attribute.
+
+Tells ASP.NET Core to get value from query string.
+
+Example:
+
+```txt id="w5q2n8"
+api/bus?min=10&max=50
+```
+
+---
+
+## Other binding attributes
+
+* `[FromQuery]`
+* `[FromBody]`
+* `[FromRoute]`
+* `[FromForm]`
+* `[FromHeader]`
+* `[FromServices]`
+
+---
+
+# Very short evaluator answer
+
+“`[FromQuery]` binds parameter values from query string.”
+
+---
+
+# 4. `Ok()`
+
+```csharp id="m8x2q4"
+return Ok(result);
+```
+
+---
+
+## What is `Ok()`?
+
+Built-in method from `ControllerBase`.
+
+Returns HTTP 200 OK response.
+
+---
+
+## Other response methods
+
+* `Ok()`
+* `BadRequest()`
+* `NotFound()`
+* `Unauthorized()`
+* `Created()`
+* `NoContent()`
+
+---
+
+# Very short evaluator answer
+
+“`Ok()` returns HTTP 200 success response.”
+
+---
+
+# 5. `CreatedAtAction()` and `nameof`
+
+```csharp id="k5v1n7"
+CreatedAtAction(nameof(GetById), new { id = result.BusId }, result)
+```
+
+---
+
+## What is `CreatedAtAction()`?
+
+Returns HTTP 201 Created response.
+
+Also provides location of newly created resource.
+
+---
+
+## What does `nameof(GetById)` do?
+
+Returns method name as string safely.
+
+Equivalent to:
+
+```csharp id="f8m2q4"
+"GetById"
+```
+
+but compile-time safe.
+
+---
+
+## Why use `nameof`?
+
+If method name changes during refactoring, compiler updates/checks automatically.
+
+Avoids hardcoded strings.
+
+---
+
+## When use `CreatedAtAction()`?
+
+Use after successful POST/create operation.
+
+---
+
+## Other creation responses
+
+* `Created()`
+* `CreatedAtAction()`
+* `CreatedAtRoute()`
+
+---
+
+# Very short evaluator answer
+
+“`CreatedAtAction()` returns HTTP 201 Created response with resource location, and `nameof` safely gets method name as string.”
+
+OTHER IMPORTANT:
+# `ControllerBase`
+
+Used for Web APIs only. ✅
+
+Provides:
+
+* `Ok()`
+* `BadRequest()`
+* `NotFound()`
+* API features
+
+Does NOT support Views/Razor pages.
+
+---
+
+# `Controller`
+
+Used for MVC applications with UI/views.
+
+It inherits from:
+
+```csharp id="m4x8q1"
+ControllerBase
+```
+
+and additionally supports:
+
+* `View()`
+* Razor Pages
+* UI rendering
+
+---
+
+# Very short difference
+
+* `ControllerBase` → APIs only
+* `Controller` → APIs + Views/UI
+
+
+Yes. ✅
+
+`Controller` is child class of `ControllerBase`.
+
+Hierarchy:
+
+```txt id="m4x8q1"
+ControllerBase
+      ↓
+  Controller
+```
+
+So `Controller` gets all features of `ControllerBase` plus View/UI support.
+
+
+
+
+MOST IMPORTANT:
+# Exact Definition of Binding Attribute
+
+A binding attribute tells ASP.NET Core from where to get/bind parameter values in an HTTP request.
+
+---
+
+# 1. `[FromQuery]`
+
+Gets data from query string.
+
+URL:
+
+```txt id="m4x8q1"
+api/bus?min=10&max=50
+```
+
+Code:
+
+```csharp id="p7n2v5"
+[HttpGet]
+public IActionResult Get([FromQuery] int min, [FromQuery] int max)
+{
+    return Ok();
+}
+```
+
+---
+
+# 2. `[FromBody]`
+
+Gets data from request body.
+
+JSON:
+
+```json id="u1m9x4"
+{
+  "name":"Volvo"
+}
+```
+
+Code:
+
+```csharp id="r5m2x8"
+[HttpPost]
+public IActionResult Create([FromBody] BusRequestDto dto)
+{
+    return Ok();
+}
+```
+
+---
+
+# 3. `[FromRoute]`
+
+Gets value from URL route.
+
+URL:
+
+```txt id="n7q1v4"
+api/bus/5
+```
+
+Code:
+
+```csharp id="p4m8x2"
+[HttpGet("{id}")]
+public IActionResult Get([FromRoute] int id)
+{
+    return Ok();
+}
+```
+
+---
+
+# 4. `[FromForm]`
+
+Gets data from form-data.
+
+Code:
+
+```csharp id="w5q2n8"
+[HttpPost]
+public IActionResult Upload([FromForm] string name)
+{
+    return Ok();
+}
+```
+
+Mostly used in file upload forms.
+
+---
+
+# 5. `[FromHeader]`
+
+Gets value from request headers.
+
+Code:
+
+```csharp id="m8x2q4"
+[HttpGet]
+public IActionResult Get([FromHeader] string token)
+{
+    return Ok();
+}
+```
+
+---
+
+# 6. `[FromServices]`
+
+Gets service directly from Dependency Injection container.
+
+Code:
+
+```csharp id="k5v1n7"
+public IActionResult Test([FromServices] IBusService service)
+{
+    return Ok();
+}
+```
+
+---
+
+# Response Methods + Status Codes
+
+| Method           | Status Code |
+| ---------------- | ----------- |
+| `Ok()`           | 200         |
+| `Created()`      | 201         |
+| `NoContent()`    | 204         |
+| `BadRequest()`   | 400         |
+| `Unauthorized()` | 401         |
+| `NotFound()`     | 404         |
+
+
+
+
+| Method            | Status Code | Example                                 |
+| ----------------- | ----------- | --------------------------------------- |
+| `Ok()`            | 200         | Data fetched successfully               |
+| `Created()`       | 201         | New Bus created successfully            |
+| `NoContent()`     | 204         | Delete successful but nothing to return |
+| `BadRequest()`    | 400         | Invalid input/model validation failed   |
+| `Unauthorized()`  | 401         | User not logged in or invalid token     |
+| `NotFound()`      | 404         | Bus with given ID does not exist        |
+| `StatusCode(500)` | 500         | Server/database exception occurred      |
+
+Example of `BadRequest()`:
+
+```csharp id="m4x8q1"
+if(dto == null)
+    return BadRequest();
+```
+
+Example of `NotFound()`:
+
+```csharp id="p7n2v5"
+if(bus == null)
+    return NotFound();
+```
+
+Example of `500`:
+
+```csharp id="u1m9x4"
+catch(Exception)
+{
+    return StatusCode(500);
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

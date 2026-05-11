@@ -1,0 +1,38 @@
+important commands :
+1. git rm -r --cached .
+git add.
+git commit -m "Cleaned tracked ignore files"
+git push
+(when gitignore file still shows there on github)
+
+2. dotnet new webapi -n BusTicketBookingApi --framework net8.0
+3. dotnet user-secrets init
+	this is wrong :    dotnet user-secrets "ConnectionStrings__DefaultConnection" "your connection string" 
+	correct : dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Server=DESKTOP-CT4MMTD\SQLEXPRESS01;Database=busticketbooking;Trusted_Connection=True;TrustServerCertificate=True;"
+		  dotnet user-secrets remove "ConnectionStrings__DefaultConnection"
+               	  Use single colon : not double underscore __ for nested keys in user-secrets.
+
+
+
+
+4. 	dotnet add package AutoMapper.Extensions.Microsoft.DependencyInjection --version 12.0.1
+	dotnet add package Microsoft.EntityFrameworkCore.SqlServer --version 8.0.7
+	dotnet add package Microsoft.EntityFrameworkCore.Tools --version 8.0.7
+	dotnet add package Microsoft.EntityFrameworkCore.Design --version 8.0.7
+	dotnet add package FluentValidation.AspNetCore --version 11.3.0
+	dotnet add package Microsoft.EntityFrameworkCore.Proxies --version 8.0.0
+	
+Yes. In DB-First scaffolding:
+
+* `Microsoft.EntityFrameworkCore.Tools`
+  → provides scaffold command
+
+* `Microsoft.EntityFrameworkCore.Design`
+  → generates the `Models` and `DbContext`
+
+* `Microsoft.EntityFrameworkCore.SqlServer`
+  → reads SQL Server database schema and connects to DB.
+
+5. Scaffold-DbContext "your string name" Microsoft.EntityFrameWorkCore.SqlServer -OutputDir Models -ContextDir Data -Context BusBookingContext
+
+for vs code :dotnet ef dbcontext scaffold "Server=DESKTOP-CT4MMTD\SQLEXPRESS01;Database=busticketbooking;Trusted_Connection=True;TrustServerCertificate=True;" Microsoft.EntityFrameworkCore.SqlServer -o Models --context-dir Data --context BusBookingContext
